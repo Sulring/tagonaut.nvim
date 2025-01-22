@@ -49,4 +49,7 @@ return {
   failed_to_jump_to_symbol = function(symbol_name)
     return string.format("Failed to jump to symbol '%s'", symbol_name)
   end,
+  switched_to_buffer = function(tag)
+    return string.format("Switched to buffer containing tag '%s'", tag)
+  end,
 }

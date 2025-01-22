@@ -4,6 +4,7 @@ local config = require("tagonaut.config").options
 local messages = require "tagonaut.messages"
 local extmarks = require "tagonaut.extmarks"
 
+
 M.tags = { global = {}, workspace = {}, extmarks_visible = {} }
 M.keyed_tags = {}
 M.temp_deleted_tags = {}
@@ -21,7 +22,8 @@ end
 -- @return table|nil: The tag information if found, nil otherwise
 function M.get_tag_info(tag_name, is_global)
   local workspace = M.get_workspace()
-  return is_global and M.tags.global[tag_name] or (M.tags.workspace[workspace] and M.tags.workspace[workspace][tag_name])
+  return is_global and M.tags.global[tag_name]
+    or (M.tags.workspace[workspace] and M.tags.workspace[workspace][tag_name])
 end
 
 --- Set tag information for a given tag name and scope
@@ -264,7 +266,7 @@ function M.restore_deleted_tag(index)
     M.save_tags()
     return true, messages.tag_restored(deleted_tag.tag)
   end
-  return false, messages.tag_not_found("deleted tag")
+  return false, messages.tag_not_found "deleted tag"
 end
 
 --- Clear all tags
@@ -392,22 +394,182 @@ end
 --- Trigger a keyed tag action
 -- @return boolean, string: Success status and message
 function M.trigger_keyed_tag()
-  local char = vim.fn.getchar()
-  local key = vim.fn.nr2char(char)
+  -- Debug: Show current keyed tags
+  local debug_msg = "Available keyed tags: "
+  for k, v in pairs(M.keyed_tags) do
+    debug_msg = debug_msg .. string.format("[%s]=%s ", k, v)
+  end
+  vim.api.nvim_echo({ { debug_msg .. " > ", "Comment" } }, false, {})
+  vim.cmd "redraw"
 
-  if M.keyed_tags[key] then
-    local tag_info = M.get_tag_info(M.keyed_tags[key], true) or M.get_tag_info(M.keyed_tags[key], false)
+  local input = ""
+  local potential_matches = {}
+
+  -- Get the first key
+  local char = vim.fn.nr2char(vim.fn.getchar())
+  input = input .. char
+
+  -- Find potential matches
+  for key, _ in pairs(M.keyed_tags) do
+    if key:sub(1, #input) == input then
+      potential_matches[key] = true
+    end
+  end
+
+  -- If there are potential multi-char matches, wait for more input
+  while next(potential_matches) and not M.keyed_tags[input] do
+    -- Show remaining potential matches
+    local match_msg = "Potential matches: "
+    for key, _ in pairs(potential_matches) do
+      match_msg = match_msg .. "[" .. key .. "] "
+    end
+    vim.api.nvim_echo({ { match_msg, "Comment" } }, false, {})
+    vim.cmd "redraw"
+
+    -- Get next character
+    char = vim.fn.nr2char(vim.fn.getchar())
+    input = input .. char
+
+    -- Update potential matches
+    local new_matches = {}
+    for key, _ in pairs(potential_matches) do
+      if key:sub(1, #input) == input then
+        new_matches[key] = true
+      end
+    end
+    potential_matches = new_matches
+
+    -- Break if no more potential matches or exact match found
+    if not next(potential_matches) or M.keyed_tags[input] then
+      break
+    end
+  end
+
+  -- Clear the prompt line
+  vim.api.nvim_echo({ { "", "" } }, false, {})
+
+  -- Check if key exists in keyed_tags
+  if M.keyed_tags[input] then
+    local tag_info = M.get_tag_info(M.keyed_tags[input], true) or M.get_tag_info(M.keyed_tags[input], false)
+
     if tag_info then
+      -- Jump to file and position
       vim.cmd("edit " .. tag_info.path)
-      vim.api.nvim_win_set_cursor(0, { tag_info.line, 0 })
-      vim.cmd "normal! zz"
-      return true, messages.jumped_to_tag(M.keyed_tags[key])
+      if tag_info.symbol then
+        local success, msg = require("tagonaut.symbols").jump_to_symbol(tag_info.symbol, tag_info.path)
+        vim.api.nvim_echo({ { msg, success and "Normal" or "ErrorMsg" } }, false, {})
+        return success
+      else
+        vim.api.nvim_win_set_cursor(0, { tag_info.line, 0 })
+        vim.cmd "normal! zz"
+        vim.api.nvim_echo({ { messages.jumped_to_tag(M.keyed_tags[input]), "Normal" } }, false, {})
+        return true
+      end
     else
-      return false, messages.tag_not_found(M.keyed_tags[key])
+      vim.api.nvim_echo({ { messages.tag_not_found(M.keyed_tags[input]), "ErrorMsg" } }, false, {})
+      return false
     end
   else
-    return false, messages.no_tag_for_key(key)
+    vim.api.nvim_echo({ { messages.no_tag_for_key(input), "WarningMsg" } }, false, {})
+    return false
   end
+end
+
+--- Switch to a tag's file
+-- @param tag_name string: The name of the tag
+-- @param is_global boolean: Whether the tag is global or workspace-specific
+-- @return boolean, string: Success status and message
+function M.switch_to_tag_file(tag_name, is_global)
+    local tag_info = M.get_tag_info(tag_name, is_global)
+
+    if not tag_info then
+        return false, messages.tag_not_found(tag_name)
+    end
+
+    -- Check if buffer is already open
+    local bufnr = vim.fn.bufnr(tag_info.path)
+    local was_open = bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr)
+
+    if was_open then
+        -- Switch to buffer without moving cursor
+        vim.cmd("buffer " .. bufnr)
+        return true, messages.switched_to_buffer(tag_name)
+    else
+        -- Open file and move cursor to tag position
+        vim.cmd("edit " .. tag_info.path)
+        vim.api.nvim_win_set_cursor(0, { tag_info.line, 0 })
+        vim.cmd "normal! zz"
+        return true, messages.jumped_to_tag(tag_name)
+    end
+end
+
+--- Trigger a keyed file action
+-- @return boolean, string: Success status and message
+function M.trigger_keyed_file()
+    -- Show available keys
+    local debug_msg = "Available keyed tags: "
+    for k, v in pairs(M.keyed_tags) do
+        debug_msg = debug_msg .. string.format("[%s]=%s ", k, v)
+    end
+    vim.api.nvim_echo({ { debug_msg .. " > ", "Comment" } }, false, {})
+    vim.cmd "redraw"
+
+    local input = ""
+    local potential_matches = {}
+
+    -- Get first key press
+    local char = vim.fn.nr2char(vim.fn.getchar())
+    input = input .. char
+
+    -- Find potential matches
+    for key, _ in pairs(M.keyed_tags) do
+        if key:sub(1, #input) == input then
+            potential_matches[key] = true
+        end
+    end
+
+    -- Handle multi-character keys
+    while next(potential_matches) and not M.keyed_tags[input] do
+        local match_msg = "Potential matches: "
+        for key, _ in pairs(potential_matches) do
+            match_msg = match_msg .. "[" .. key .. "] "
+        end
+        vim.api.nvim_echo({ { match_msg, "Comment" } }, false, {})
+        vim.cmd "redraw"
+
+        char = vim.fn.nr2char(vim.fn.getchar())
+        input = input .. char
+
+        local new_matches = {}
+        for key, _ in pairs(potential_matches) do
+            if key:sub(1, #input) == input then
+                new_matches[key] = true
+            end
+        end
+        potential_matches = new_matches
+
+        if not next(potential_matches) or M.keyed_tags[input] then
+            break
+        end
+    end
+
+    -- Clear prompt
+    vim.api.nvim_echo({ { "", "" } }, false, {})
+
+    -- Handle the key
+    if M.keyed_tags[input] then
+        local tag = M.keyed_tags[input]
+        -- Try global first, then local
+        local success, msg = M.switch_to_tag_file(tag, true)
+        if not success then
+            success, msg = M.switch_to_tag_file(tag, false)
+        end
+        vim.api.nvim_echo({ { msg, success and "Normal" or "ErrorMsg" } }, false, {})
+        return success
+    else
+        vim.api.nvim_echo({ { messages.no_tag_for_key(input), "WarningMsg" } }, false, {})
+        return false
+    end
 end
 
 return M

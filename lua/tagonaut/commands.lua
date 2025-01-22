@@ -82,6 +82,12 @@ function M.setup()
     ':lua require("tagonaut.tags").goto_next_tag(-1)<CR>',
     { noremap = true, silent = true }
   )
+  vim.api.nvim_set_keymap(
+    "n",
+    config.keymaps.trigger_keyed_file,
+    ':lua require("tagonaut.api").trigger_keyed_file()<CR>',
+    { noremap = true, silent = true }
+  )
 end
 
 return M

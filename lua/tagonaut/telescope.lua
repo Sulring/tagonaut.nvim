@@ -36,8 +36,14 @@ local function create_telescope_picker(tag_list, title, include_global)
           selection.display = selection.display:gsub(" %[" .. existing_key .. "%]", "")
         end
       else
+        -- Temporarily suspend telescope while getting input
+        local current_picker = action_state.get_current_picker(prompt_bufnr)
+        local function restore_picker()
+          current_picker:refresh(current_picker.finder, { reset_prompt = true })
+        end
+
         vim.ui.input({ prompt = messages.assign_key_prompt }, function(input)
-          if input and #input == 1 then
+          if input and input ~= "" then -- Allow any non-empty input
             local success, msg = api.assign_key_to_tag(selection.value.tag, input)
             if success then
               print(msg)
@@ -45,7 +51,9 @@ local function create_telescope_picker(tag_list, title, include_global)
               selection.display = selection.display .. " [" .. input .. "]"
             end
           end
+          restore_picker()
         end)
+        return
       end
       local picker = action_state.get_current_picker(prompt_bufnr)
       picker:refresh(picker.finder, { reset_prompt = true })
