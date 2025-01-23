@@ -1,7 +1,7 @@
 local M = {}
 
 M.options = {
-  config_file = vim.fn.expand "~/.nvim/tagonauts.json",
+  config_file = vim.fn.stdpath "data" .. "/tagonauts.json",
   use_devicons = pcall(require, "nvim-web-devicons"),
   use_telescope = false,
   auto_assign_keys = { "1", "2", "3", "4", "5", "6", "7", "8", "9" },
