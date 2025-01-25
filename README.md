@@ -2,6 +2,17 @@
 
 A navigation tool for Neovim that lets you create, manage and quickly jump between tagged locations across your workspaces. Think of it as dropping pins on a code map!
 
+## Screenshots
+
+### Tag Management
+![Tag Management](https://sulring.fra1.cdn.digitaloceanspaces.com/tagonaut/tags.jpg)
+
+### Workspace Organization
+![Workspaces](https://sulring.fra1.cdn.digitaloceanspaces.com/tagonaut/workspaces.jpg)
+
+### Quick Trigger
+![Quick Trigger](https://sulring.fra1.cdn.digitaloceanspaces.com/tagonaut/trigger.jpg)
+
 ## Heads Up!
 This is a bit rough around the edges - made it for my own workflow but sharing in case it's useful to others. LSP symbol tagging is particularly experimental and flaky right now.
 
