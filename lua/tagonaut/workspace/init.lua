@@ -74,6 +74,17 @@ function M.rename_workspace(workspace_path, new_name)
   return false
 end
 
+function M.open_rename_popup(workspace_path)
+  local current_name = api.workspaces[workspace_path] and api.workspaces[workspace_path].name or vim.fn.fnamemodify(workspace_path, ":t")
+  local actions = require "tagonaut.workspace.window.actions"
+
+  actions.create_rename_popup(workspace_path, current_name, function(new_name)
+    if new_name and new_name ~= "" then
+      M.rename_workspace(workspace_path, new_name)
+    end
+  end)
+end
+
 function M.open_workspace_window()
   require("tagonaut.workspace.window").display_workspaces()
 end

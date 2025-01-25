@@ -32,6 +32,7 @@ local function create_popup()
         top_align = "center",
       },
     },
+    zindex = 40,
     position = "50%",
     size = {
       width = width,
@@ -236,7 +237,11 @@ end
 function M.rename_current()
   local workspace_data = window_state.workspaces[window_state.cursor_pos]
   if workspace_data then
-    actions.rename_workspace(window_state.popup, workspace_data.path, function()
+    local current_name = require("tagonaut.api").workspaces[workspace_data.path].name
+      or vim.fn.fnamemodify(workspace_data.path, ":t")
+
+    actions.create_rename_popup(workspace_data.path, current_name, function(new_name)
+      workspace.rename_workspace(workspace_data.path, new_name)
       M.update_window()
     end)
   end

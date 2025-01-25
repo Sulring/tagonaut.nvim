@@ -19,9 +19,10 @@ end
 
 local function create_input_popup(opts)
   return Input({
-    position = {
+    relative = opts.relative or "cursor",
+    position = opts.position or {
       row = opts.row or "50%",
-      col = "50%",
+      col = opts.col or "50%",
     },
     size = {
       width = opts.width or 40,
@@ -36,6 +37,7 @@ local function create_input_popup(opts)
     win_options = {
       winhighlight = "Normal:Normal,FloatBorder:Special",
     },
+    zindex = opts.zindex or 10,
   }, {
     prompt = opts.prompt or "> ",
     default_value = opts.default_value or "",
@@ -49,13 +51,22 @@ function M.rename_workspace(popup, workspace_path, callback)
     return
   end
 
-  local current_name = vim.fn.fnamemodify(workspace_path, ":t")
+  local workspace_data = require("tagonaut.api").workspaces[workspace_path]
+  local current_name = workspace_data and workspace_data.name or vim.fn.fnamemodify(workspace_path, ":t")
 
-  local input = create_input_popup {
+  local input = create_input_popup({
     title = " Rename Workspace ",
     default_value = current_name,
+    relative = "editor",
+    position = {
+      row = "50%",
+      col = "50%",
+    },
+    width = 40,
+    zindex = 60,
+    prompt = "> ",
     on_submit = function(new_name)
-      if new_name and new_name ~= "" then
+      if new_name and new_name ~= "" and new_name ~= current_name then
         workspace.rename_workspace(workspace_path, new_name)
         if callback then
           callback()
@@ -67,7 +78,15 @@ function M.rename_workspace(popup, workspace_path, callback)
         vim.api.nvim_set_current_win(popup.winid)
       end
     end,
-  }
+  })
+
+  input:map("i", "<Esc>", function()
+    input:unmount()
+  end, { noremap = true })
+
+  input:map("n", "<Esc>", function()
+    input:unmount()
+  end, { noremap = true })
 
   input:mount()
 end
@@ -95,7 +114,7 @@ function M.search_workspaces(popup, callback)
     win_options = {
       winhighlight = "Normal:Normal,FloatBorder:Special",
     },
-    zindex = 50,
+    zindex = 60,
   }, {
     prompt = "🔍 ",
     on_submit = function(value)
