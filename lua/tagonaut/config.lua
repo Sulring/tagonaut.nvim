@@ -3,10 +3,10 @@ local M = {}
 M.options = {
   config_file = vim.fn.stdpath "data" .. "/tagonauts.json",
   use_devicons = pcall(require, "nvim-web-devicons"),
-  use_telescope = false,
   auto_assign_keys = { "1", "2", "3", "4", "5", "6", "7", "8", "9" },
   use_lsp = true,
   use_treesitter = true,
+  show_legend = true,
   extmark = {
     icon = "󱈤",
     hl_group = "ZipTagExtmark",
@@ -16,27 +16,26 @@ M.options = {
     italic = true,
   },
   keymaps = {
-    add_local_tag = "<F5>",
-    add_global_tag = "<F6>",
-    list_local_tags = "<leader>l",
-    list_all_tags = "<F1>",
+    add_tag = "<F5>",
+    list_tags = "<leader>l",
     toggle_extmarks = "<F2>",
     trigger_keyed_tag = "<F10>",
     trigger_keyed_file = "<F9>",
     next_tag = "<C-]>",
     prev_tag = "<C-[>",
     symbol_tagging = "ts",
+    list_workspaces = "<leader>w",
+  },
+  workspace_window = {
+    close = "q",
+    select = "<CR>",
+    toggle_ignore = "d",
+    rename = "r",
+    cycle_sort = "s",
+    toggle_show_ignored = "i",
   },
   floating_window = {
     close = "q",
-    select = "<CR>",
-    delete = "d",
-    rename = "r",
-    clear = "c",
-    assign_key = "a",
-    clear_all_keys = "x",
-  },
-  telescope = {
     select = "<CR>",
     delete = "d",
     rename = "r",
@@ -51,12 +50,10 @@ M.options = {
 
 function M.setup(opts)
   opts = opts or {}
-  if opts.floating_window then
-    opts.floating_window = vim.tbl_deep_extend("force", M.options.floating_window, opts.floating_window)
-  end
-  if opts.telescope then
-    opts.telescope = vim.tbl_deep_extend("force", M.options.telescope, opts.telescope)
-  end
+  opts.floating_window = opts.floating_window or {}
+  opts.workspace_window = opts.workspace_window or {}
+  opts.floating_window = vim.tbl_deep_extend("force", M.options.floating_window, opts.floating_window)
+  opts.workspace_window = vim.tbl_deep_extend("force", M.options.workspace_window, opts.workspace_window)
   M.options = vim.tbl_deep_extend("force", M.options, opts)
 end
 

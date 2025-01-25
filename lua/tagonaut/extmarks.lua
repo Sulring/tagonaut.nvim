@@ -1,23 +1,22 @@
 local M = {}
 local api = vim.api
 local config = require("tagonaut.config").options
-local utils = require "tagonaut.utils"
 
 local ns_id = api.nvim_create_namespace "tagonaut"
 local extmark_ids = {}
 
+--- Setup highlight groups for extmarks
 function M.setup_highlights()
   api.nvim_create_autocmd("ColorScheme", {
     pattern = "*",
     callback = M.update_extmark_highlight,
   })
-
   M.update_extmark_highlight()
 end
 
+--- Update extmark highlight colors
 function M.update_extmark_highlight()
-  local fg, bg = utils.get_highlight_colors()
-
+  local fg, bg = require("tagonaut.utils").get_highlight_colors()
   api.nvim_set_hl(0, config.extmark.hl_group, {
     fg = fg,
     bg = bg,
@@ -26,9 +25,12 @@ function M.update_extmark_highlight()
   })
 end
 
-function M.add_extmark(buf, tag_name, tag_info)
-  if not buf or not tag_name or not tag_info then
-    print "Error: Invalid arguments for add_extmark"
+--- Add an extmark for a tag
+--- @param buf number: Buffer handle
+--- @param tag_id number: Tag identifier
+--- @param tag_info table: Tag information
+function M.add_extmark(buf, tag_id, tag_info)
+  if not buf or not tag_id or not tag_info then
     return
   end
 
@@ -36,85 +38,91 @@ function M.add_extmark(buf, tag_name, tag_info)
   local hl_group = config.extmark.hl_group
 
   local line
-  if type(tag_info) == "table" then
-    if tag_info.type == "symbol" and tag_info.symbol then
-      line = tag_info.symbol.range.start.line
-    elseif tag_info.line then
-      line = tag_info.line - 1
-    else
-      print "Error: Invalid tag_info structure"
-      return
-    end
-  elseif type(tag_info) == "number" then
-    line = tag_info - 1
+  if tag_info.symbol then
+    line = tag_info.symbol.range.start.line
+  elseif tag_info.line then
+    line = tag_info.line - 1
   else
-    print "Error: Unexpected tag_info type"
     return
   end
 
+  local display_text = tag_info.name
+  if tag_info.shortcut then
+    display_text = string.format("[%s] %s", tag_info.shortcut, tag_info.name)
+  end
+
   local id = api.nvim_buf_set_extmark(buf, ns_id, line, 0, {
-    virt_text = { { icon .. " " .. tag_name, hl_group } },
+    virt_text = { { icon .. " " .. display_text, hl_group } },
     virt_text_pos = "eol",
   })
-  extmark_ids[tag_name] = id
+  extmark_ids[tag_id] = id
 end
 
-function M.remove_extmark(tag_name)
+--- Remove an extmark
+--- @param tag_id number: The ID of the tag whose extmark should be removed
+function M.remove_extmark(tag_id)
   local buf = api.nvim_get_current_buf()
-  if extmark_ids[tag_name] then
-    api.nvim_buf_del_extmark(buf, ns_id, extmark_ids[tag_name])
-    extmark_ids[tag_name] = nil
+  if extmark_ids[tag_id] then
+    pcall(api.nvim_buf_del_extmark, buf, ns_id, extmark_ids[tag_id])
+    extmark_ids[tag_id] = nil
   end
 end
 
+--- Clear all extmarks from the current buffer
 function M.clear_all_extmarks()
   local buf = api.nvim_get_current_buf()
   api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
   extmark_ids = {}
 end
 
-function M.update_all_buffers_extmarks(tags)
-  for _, buf in ipairs(api.nvim_list_bufs()) do
-    if api.nvim_buf_is_valid(buf) and api.nvim_get_option_value("buflisted", { buf = buf }) then
-      M.update_extmarks(buf, tags)
-    end
+--- Update extmarks for a buffer
+--- @param buf number: Buffer handle
+--- @param workspace_data table: Workspace data containing tags
+function M.update_extmarks(buf, workspace_data)
+  if not buf or not workspace_data then
+    return
   end
-end
 
-function M.update_extmarks(buf, tags)
-  buf = buf or api.nvim_get_current_buf()
+  if not workspace_data.extmarks_visible then
+    return
+  end
+
   local current_file = api.nvim_buf_get_name(buf)
-
   api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
   extmark_ids = {}
 
-  local workspace = vim.fn.getcwd(-1, -1)
-
-  if tags.extmarks_visible[workspace] then
-    for tag, info in pairs(tags.workspace[workspace] or {}) do
-      if current_file == info.path then
-        M.add_extmark(buf, tag, info)
-      end
-    end
-
-    for tag, info in pairs(tags.global) do
-      if current_file == info.path then
-        M.add_extmark(buf, tag, info)
-      end
+  for tag_id, tag_info in pairs(workspace_data.tags) do
+    if tag_info.path == current_file then
+      M.add_extmark(buf, tag_id, tag_info)
     end
   end
 end
 
-function M.toggle_extmarks(tags)
-  local workspace = vim.fn.getcwd(-1, -1)
-  local new_visibility = tags.toggle_extmarks_visibility(workspace)
-  if new_visibility then
-    M.update_all_buffers_extmarks(tags)
-    print "Tags are now visible"
-  else
-    M.clear_all_extmarks()
-    print "Tags are now hidden"
+--- Update a single tag's extmark
+--- @param tag_id number: The ID of the tag to update
+--- @param tag_info table: The tag information
+function M.update_tag_extmark(tag_id, tag_info)
+  local buf = vim.fn.bufnr(tag_info.path)
+  if buf ~= -1 and api.nvim_buf_is_loaded(buf) then
+    if extmark_ids[tag_id] then
+      M.remove_extmark(tag_id)
+    end
+    M.add_extmark(buf, tag_id, tag_info)
   end
+end
+
+--- Get extmark position for a tag
+--- @param tag_id number: The ID of the tag
+--- @return table|nil: Position information if found
+function M.get_extmark_position(tag_id)
+  local buf = api.nvim_get_current_buf()
+  if extmark_ids[tag_id] then
+    local pos = api.nvim_buf_get_extmark_by_id(buf, ns_id, extmark_ids[tag_id], {})
+    if pos and #pos == 2 then
+      return { line = pos[1], col = pos[2] }
+    end
+  end
+  return nil
 end
 
 return M

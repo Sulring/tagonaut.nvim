@@ -1,6 +1,30 @@
 local M = {}
 local config = require("tagonaut.config").options
 
+function M.get_sorted_tags(tags)
+  local tag_list = {}
+  for id, info in pairs(tags) do
+    table.insert(tag_list, {
+      id = id,
+      info = info,
+    })
+  end
+
+  table.sort(tag_list, function(a, b)
+    if a.info.shortcut and b.info.shortcut then
+      return a.info.shortcut < b.info.shortcut
+    elseif a.info.shortcut then
+      return true
+    elseif b.info.shortcut then
+      return false
+    else
+      return a.info.name < b.info.name
+    end
+  end)
+
+  return tag_list
+end
+
 function M.get_highlight_colors()
   local normal = vim.api.nvim_get_hl(0, { name = "Normal" })
   local cursorline = vim.api.nvim_get_hl(0, { name = "CursorLine" })

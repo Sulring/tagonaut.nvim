@@ -51,8 +51,11 @@ end
 
 function M.is_cursor_in_range(cursor_pos, range)
   local cursor_line, cursor_col = unpack(cursor_pos)
-  return (cursor_line >= range.start.line and cursor_line <= range["end"].line)
-    and (cursor_col >= range.start.character and cursor_col <= range["end"].character)
+  cursor_line = cursor_line - 1
+  return cursor_line >= range.start.line
+    and cursor_line <= range["end"].line
+    and cursor_col >= range.start.character
+    and cursor_col <= range["end"].character
 end
 
 function M.jump_with_lsp(symbol)
@@ -88,31 +91,10 @@ function M.jump_to_symbol(symbol, file_path)
   end
 end
 
-function M.jump_to_tag(tag_name, is_global)
-  local workspace = M.get_workspace()
-  local tag_info = is_global and M.tags.global[tag_name] or M.tags.workspace[workspace][tag_name]
-
-  if not tag_info then
-    return false, messages.tag_not_found(tag_name)
-  end
-
-  vim.cmd("edit " .. tag_info.path)
-
-  if tag_info.symbol then
-    return M.jump_to_symbol(tag_info.symbol)
-  elseif tag_info.line then
-    vim.api.nvim_win_set_cursor(0, { tag_info.line, 0 })
-    vim.cmd "normal! zz"
-    return true, messages.jumped_to_tag(tag_name)
-  else
-    return false, messages.invalid_tag_info
-  end
-end
-
 function M.get_query_string(symbol)
   local base_query = [[
-        (%s name: (identifier) @%s (#eq? @%s "%s"))
-    ]]
+    (%s name: (identifier) @%s (#eq? @%s "%s"))
+  ]]
 
   local query_types = {
     function_declaration = "function",
@@ -179,21 +161,58 @@ function M.update_tags_after_rename(result)
 end
 
 function M.update_tags_for_file(file_path, old_name, new_name)
-  local updated_tags = {}
-  for _, tags in pairs(api.tags) do
-    if type(tags) == "table" then
-      for tag_name, tag_info in pairs(tags) do
-        if tag_info.path == file_path and tag_info.symbol and tag_info.symbol.name == old_name then
-          tag_info.symbol.name = new_name
-          updated_tags[tag_name] = tag_info
-        end
+  local workspace = api.get_workspace()
+  local updated = false
+
+  if api.workspaces[workspace] and api.workspaces[workspace].tags then
+    for tag_id, tag_info in pairs(api.workspaces[workspace].tags) do
+      if tag_info.path == file_path and tag_info.symbol and tag_info.symbol.name == old_name then
+        tag_info.symbol.name = new_name
+        updated = true
       end
     end
   end
 
-  if next(updated_tags) then
+  if updated then
     api.save_tags()
-    print(string.format("Updated %d tags after renaming %s to %s", #updated_tags, old_name, new_name))
+    print(string.format("Updated tags after renaming %s to %s", old_name, new_name))
+  end
+end
+
+function M.find_symbol_tags(symbol_name)
+  local workspace = api.get_workspace()
+  local found_tags = {}
+
+  if api.workspaces[workspace] and api.workspaces[workspace].tags then
+    for tag_id, tag_info in pairs(api.workspaces[workspace].tags) do
+      if tag_info.symbol and tag_info.symbol.name == symbol_name then
+        table.insert(found_tags, {
+          id = tag_id,
+          info = tag_info,
+        })
+      end
+    end
+  end
+
+  return found_tags
+end
+
+function M.update_symbol_references(old_name, new_name)
+  local workspace = api.get_workspace()
+  local updated = false
+
+  if api.workspaces[workspace] and api.workspaces[workspace].tags then
+    for tag_id, tag_info in pairs(api.workspaces[workspace].tags) do
+      if tag_info.symbol and tag_info.symbol.name == old_name then
+        tag_info.symbol.name = new_name
+        updated = true
+      end
+    end
+  end
+
+  if updated then
+    api.save_tags()
+    print(string.format("Updated symbol references from %s to %s", old_name, new_name))
   end
 end
 
