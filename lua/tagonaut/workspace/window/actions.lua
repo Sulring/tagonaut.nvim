@@ -46,15 +46,8 @@ local function create_input_popup(opts)
   })
 end
 
-function M.rename_workspace(popup, workspace_path, callback)
-  if not workspace_path then
-    return
-  end
-
-  local workspace_data = require("tagonaut.api").workspaces[workspace_path]
-  local current_name = workspace_data and workspace_data.name or vim.fn.fnamemodify(workspace_path, ":t")
-
-  local input = create_input_popup({
+function M.create_rename_popup(workspace_path, current_name, callback)
+  local input = create_input_popup {
     title = " Rename Workspace ",
     default_value = current_name,
     relative = "editor",
@@ -67,18 +60,19 @@ function M.rename_workspace(popup, workspace_path, callback)
     prompt = "> ",
     on_submit = function(new_name)
       if new_name and new_name ~= "" and new_name ~= current_name then
-        workspace.rename_workspace(workspace_path, new_name)
         if callback then
-          callback()
+          callback(new_name)
         end
       end
     end,
     on_close = function()
-      if popup and popup.winid and vim.api.nvim_win_is_valid(popup.winid) then
-        vim.api.nvim_set_current_win(popup.winid)
+      local workspace_window = require "tagonaut.workspace.window"
+      local state = workspace_window.get_window_state()
+      if state.popup and state.popup.winid and vim.api.nvim_win_is_valid(state.popup.winid) then
+        vim.api.nvim_set_current_win(state.popup.winid)
       end
     end,
-  })
+  }
 
   input:map("i", "<Esc>", function()
     input:unmount()

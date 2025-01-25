@@ -241,8 +241,10 @@ function M.rename_current()
       or vim.fn.fnamemodify(workspace_data.path, ":t")
 
     actions.create_rename_popup(workspace_data.path, current_name, function(new_name)
-      workspace.rename_workspace(workspace_data.path, new_name)
-      M.update_window()
+      if new_name then
+        workspace.rename_workspace(workspace_data.path, new_name)
+        M.update_window()
+      end
     end)
   end
 end
