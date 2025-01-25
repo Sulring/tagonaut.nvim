@@ -8,7 +8,7 @@ A navigation tool for Neovim that lets you create, manage and quickly jump betwe
 ![Tag Management](https://sulring.fra1.cdn.digitaloceanspaces.com/tagonaut/tags.jpg)
 
 ### Workspace Organization
-![Workspaces](https://sulring.fra1.cdn.digitaloceanspaces.com/tagonaut/workspaces.jpg)
+![Workspace Organization](https://sulring.fra1.cdn.digitaloceanspaces.com/tagonaut/workspaces.jpg)
 
 ### Quick Trigger
 ![Quick Trigger](https://sulring.fra1.cdn.digitaloceanspaces.com/tagonaut/trigger.jpg)
