@@ -5,13 +5,13 @@ A navigation tool for Neovim that lets you create, manage and quickly jump betwe
 ## Screenshots
 
 ### Tag Management
-![Tag Management](https://sulring.fra1.cdn.digitaloceanspaces.com/tagonaut/tags.jpg)
+![Tag Management](https://raw.githubusercontent.com/Sulring/misc/master/tags.jpg)
 
 ### Workspace Organization
-![Workspace Organization](https://sulring.fra1.cdn.digitaloceanspaces.com/tagonaut/workspaces.jpg)
+![Workspace Organization](https://raw.githubusercontent.com/Sulring/misc/master/workspaces.jpg)
 
 ### Quick Trigger
-![Quick Trigger](https://sulring.fra1.cdn.digitaloceanspaces.com/tagonaut/trigger.jpg)
+![Quick Trigger](https://raw.githubusercontent.com/Sulring/misc/master/trigger.jpg)
 
 ## Heads Up!
 This is a bit rough around the edges - made it for my own workflow but sharing in case it's useful to others. LSP symbol tagging is particularly experimental and flaky right now.
