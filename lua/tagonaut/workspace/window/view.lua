@@ -1,168 +1,281 @@
 local M = {}
-local api = vim.api
-local state = require "tagonaut.floating.state"
-local utils = require "tagonaut.workspace.window.utils"
+local NuiLine = require "nui.line"
+local NuiText = require "nui.text"
+local config = require("tagonaut.config").options.workspace_window
 
-local function highlight_legend(buf, ns_id, legend_line_num)
-  local line = api.nvim_buf_get_lines(buf, legend_line_num - 1, legend_line_num, false)[1]
-  local current_pos = 2
+local LAYOUT = {
+  current_width = 2,
+  name_width = 30,
+  timestamp_width = 19,
+  tags_width = 5,
+  padding = 1,
+}
 
-  while true do
-    local key_start = current_pos
-    local colon_pos = line:find(":", key_start)
-    if not colon_pos then
-      break
+local function get_window_width(state)
+  if state.popup and state.popup.winid and vim.api.nvim_win_is_valid(state.popup.winid) then
+    return vim.api.nvim_win_get_width(state.popup.winid)
+  end
+  return vim.o.columns
+end
+
+local function calculate_path_width(total_width)
+  local used_width = LAYOUT.current_width
+    + LAYOUT.name_width
+    + LAYOUT.timestamp_width
+    + LAYOUT.tags_width
+    + (LAYOUT.padding * 4)
+  return math.max(20, total_width - used_width)
+end
+
+local function create_padded_text(content, width, highlight, align)
+  if width <= 0 then
+    return NuiText ""
+  end
+
+  local str_width = vim.api.nvim_strwidth(content or "")
+  local padding = width - str_width
+  local result = ""
+
+  if str_width > width then
+    local current_width = 0
+    for i = 1, #content do
+      local char = content:sub(i, i)
+      local char_width = vim.api.nvim_strwidth(char)
+      if current_width + char_width + 3 > width then
+        result = result .. "..."
+        break
+      end
+      result = result .. char
+      current_width = current_width + char_width
     end
-
-    local desc_end = line:find("  |  ", colon_pos + 1) or #line + 1
-    if desc_end > colon_pos then
-      desc_end = desc_end - 1
-    end
-
-    api.nvim_buf_add_highlight(buf, ns_id, "Special", legend_line_num - 1, key_start, colon_pos)
-    api.nvim_buf_add_highlight(buf, ns_id, "Comment", legend_line_num - 1, colon_pos, desc_end)
-
-    current_pos = desc_end + 5
-    if current_pos >= #line then
-      break
+    result = result .. string.rep(" ", width - vim.api.nvim_strwidth(result))
+  else
+    if align == "right" then
+      result = string.rep(" ", padding) .. (content or "")
+    elseif align == "center" then
+      local left_pad = math.floor(padding / 2)
+      local right_pad = padding - left_pad
+      result = string.rep(" ", left_pad) .. (content or "") .. string.rep(" ", right_pad)
+    else
+      result = (content or "") .. string.rep(" ", padding)
     end
   end
+
+  return NuiText(result, highlight)
 end
 
-function M.create_window(window_state)
-  local buf = api.nvim_create_buf(false, true)
-  local dimensions = utils.calculate_dimensions(#state.workspace_list)
-
-  local win = api.nvim_open_win(buf, true, {
-    relative = "editor",
-    width = dimensions.width,
-    height = dimensions.height,
-    row = dimensions.row,
-    col = dimensions.col,
-    style = "minimal",
-    border = "rounded",
-    title = string.format(
-      " Workspaces (%s) %s ",
-      window_state.sort_mode,
-      window_state.show_ignored and "[Showing Ignored]" or ""
-    ),
-    title_pos = "center",
-  })
-
-  M.setup_window_content(buf, win, dimensions)
-
-  M.setup_window_options(buf, win)
-  M.setup_keymaps(buf)
-  M.setup_autocmds(buf, win)
-
-  state.set_main_window(win)
-  state.set_main_buffer(buf)
+local function format_timestamp(timestamp)
+  if not timestamp or timestamp == 0 then
+    return "Never"
+  end
+  return os.date("%Y-%m-%d %H:%M", timestamp)
 end
 
-function M.setup_window_content(buf, win, dimensions)
-  local lines = utils.generate_content(dimensions)
-  api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+local function create_header(total_width)
+  local path_width = calculate_path_width(total_width)
+  local line = NuiLine()
 
-  local current_workspace = require("tagonaut.api").get_workspace()
-  utils.highlight_current_workspace(buf, current_workspace)
+  line:append(NuiText(string.rep(" ", LAYOUT.current_width)))
 
-  local ns_id = api.nvim_create_namespace "TagonautWorkspaceHighlight"
-  highlight_legend(buf, ns_id, #lines)
+  line:append(create_padded_text("Name", LAYOUT.name_width, "TagonautHeader"))
+  line:append(NuiText(string.rep(" ", LAYOUT.padding)))
+
+  line:append(create_padded_text("Path", path_width, "TagonautHeader"))
+  line:append(NuiText(string.rep(" ", LAYOUT.padding)))
+
+  line:append(create_padded_text("Last Accessed", LAYOUT.timestamp_width, "TagonautHeader"))
+  line:append(NuiText(string.rep(" ", LAYOUT.padding)))
+
+  line:append(create_padded_text("Tags", LAYOUT.tags_width, "TagonautHeader", "right"))
+
+  return line
 end
 
-function M.setup_window_options(buf, win)
-  local window_options = {
-    cursorline = true,
-    number = false,
-    relativenumber = false,
-    wrap = false,
+local function create_separator(total_width)
+  local line = NuiLine()
+  line:append(NuiText(string.rep("─", total_width), "TagonautSeparator"))
+  return line
+end
+
+local function create_workspace_line(workspace, is_current, total_width)
+  local path_width = calculate_path_width(total_width)
+  local line = NuiLine()
+
+  line:append(NuiText(is_current and "* " or "  ", is_current and "TagonautCurrent" or nil))
+
+  local name = workspace.name or vim.fn.fnamemodify(workspace.path, ":t")
+  local name_hl = workspace.ignored and "TagonautIgnored" or nil
+  line:append(create_padded_text(name, LAYOUT.name_width, name_hl))
+  line:append(NuiText(string.rep(" ", LAYOUT.padding)))
+
+  local path_hl = workspace.ignored and "TagonautIgnored" or "TagonautPath"
+  line:append(create_padded_text(workspace.path, path_width, path_hl))
+  line:append(NuiText(string.rep(" ", LAYOUT.padding)))
+
+  local time_hl = workspace.ignored and "TagonautIgnored" or "TagonautTimestamp"
+  line:append(create_padded_text(format_timestamp(workspace.last_accessed), LAYOUT.timestamp_width, time_hl))
+  line:append(NuiText(string.rep(" ", LAYOUT.padding)))
+
+  local tags_hl = workspace.ignored and "TagonautIgnored" or "TagonautTags"
+  line:append(create_padded_text(tostring(workspace.tag_count), LAYOUT.tags_width, tags_hl, "right"))
+
+  return line
+end
+
+local function format_key_for_display(key)
+  if not key then
+    return ""
+  end
+
+  local replacements = {
+
+    { pattern = "<CR>", replace = "Enter" },
+
+    { pattern = "<C%-(%w)>", replace = "Ctrl+%1" },
+    { pattern = "<S%-(%w)>", replace = "Shift+%1" },
+    { pattern = "<A%-(%w)>", replace = "Alt+%1" },
+    { pattern = "<M%-(%w)>", replace = "Meta+%1" },
+    { pattern = "<leader>", replace = "Leader" },
   }
 
-  local buffer_options = {
-    modifiable = false,
-    bufhidden = "wipe",
-    buftype = "nofile",
-    swapfile = false,
-    filetype = "tagonaut-workspaces",
+  local display_key = key
+  for _, replacement in ipairs(replacements) do
+    display_key = display_key:gsub(replacement.pattern, replacement.replace)
+  end
+  return display_key
+end
+
+local function create_legend()
+  local LEGEND = {
+    { key = config.select or "<CR>", desc = "select" },
+    { key = config.cycle_sort or "s", desc = "sort" },
+    { key = config.toggle_ignore or "d", desc = "toggle ignore" },
+    { key = config.toggle_show_ignored or "i", desc = "show/hide ignored" },
+    { key = config.rename or "r", desc = "rename" },
+    { key = "/", desc = "search" },
+    { key = config.close or "q", desc = "quit" },
   }
 
-  for option, value in pairs(window_options) do
-    vim.api.nvim_set_option_value(option, value, { win = win })
-  end
-
-  for option, value in pairs(buffer_options) do
-    vim.api.nvim_set_option_value(option, value, { buf = buf })
-  end
-end
-
-function M.setup_keymaps(buf)
-  local config = require("tagonaut.config").options
-  local opts = { noremap = true, silent = true, nowait = true }
-
-  local keymaps = {
-    [config.workspace_window.close] = "<cmd>close<CR>",
-    ["<Esc>"] = "<cmd>close<CR>",
-    [config.workspace_window.select] = [[<cmd>lua require('tagonaut.workspace.window').select_workspace()<CR>]],
-    [config.workspace_window.cycle_sort] = [[<cmd>lua require('tagonaut.workspace.window').cycle_sort_mode()<CR>]],
-    [config.workspace_window.toggle_show_ignored] = [[<cmd>lua require('tagonaut.workspace.window').toggle_show_ignored()<CR>]],
-    [config.workspace_window.toggle_ignore] = [[<cmd>lua require('tagonaut.workspace.window').toggle_ignore_current()<CR>]],
-    [config.workspace_window.rename] = [[<cmd>lua require('tagonaut.workspace.window').rename_current()<CR>]],
-  }
-
-  for key, mapping in pairs(keymaps) do
-    api.nvim_buf_set_keymap(buf, "n", key, mapping, opts)
-  end
-end
-
-function M.setup_autocmds(buf, win)
-  utils.create_cursor_autocmds(buf, win)
-  utils.create_cleanup_autocmds(buf, win)
-end
-
-function M.update_window_content(buf, win, dimensions, window_state)
-  local lines = utils.generate_content(dimensions)
-  local current_workspace = require("tagonaut.api").get_workspace()
-  local config = require("tagonaut.config").options
-  local title = string.format(
-    " Workspaces (%s) %s ",
-    window_state.sort_mode,
-    window_state.show_ignored and "[Showing Ignored]" or ""
-  )
-
-  vim.api.nvim_buf_call(buf, function()
-    api.nvim_set_option_value("modifiable", true, { buf = buf })
-
-    api.nvim_win_set_config(win, {
-      title = title,
-      title_pos = "center",
-    })
-    api.nvim_buf_set_lines(buf, 0, -1, false, lines)
-
-    local ns_id = api.nvim_create_namespace "TagonautWorkspaceHighlight"
-    api.nvim_buf_clear_namespace(buf, ns_id, 0, -1)
-
-    utils.highlight_current_workspace(buf, current_workspace)
-
-    if config.show_legend and #lines > 0 then
-      highlight_legend(buf, ns_id, #lines)
+  local line = NuiLine()
+  for i, item in ipairs(LEGEND) do
+    if i > 1 then
+      line:append(NuiText " │ ")
     end
+    line:append(NuiText(format_key_for_display(item.key), "TagonautKey"))
+    line:append(NuiText ": ")
+    line:append(NuiText(item.desc))
+  end
+  return line
+end
 
-    api.nvim_set_option_value("modifiable", false, { buf = buf })
+function M.setup_highlights()
+  local highlights = {
+    TagonautHeader = { link = "Title" },
+    TagonautSeparator = { link = "NonText" },
+    TagonautCurrent = { link = "Special" },
+    TagonautIgnored = { link = "Comment" },
+    TagonautPath = { link = "Directory" },
+    TagonautTimestamp = { link = "NonText" },
+    TagonautTags = { link = "Number" },
+    TagonautKey = { link = "Special" },
+  }
+
+  for name, def in pairs(highlights) do
+    vim.api.nvim_set_hl(0, name, def)
+  end
+end
+
+function M.render_content(state)
+  if not state.popup or not state.popup.bufnr or not vim.api.nvim_buf_is_valid(state.popup.bufnr) then
+    return
+  end
+
+  local total_width = get_window_width(state)
+  local ns_id = vim.api.nvim_create_namespace "tagonaut_workspace"
+
+  vim.bo[state.popup.bufnr].modifiable = true
+
+  local lines = {}
+  local contents = {}
+
+  local header = create_header(total_width)
+  table.insert(lines, header)
+  table.insert(contents, header:content())
+
+  local separator = create_separator(total_width)
+  table.insert(lines, separator)
+  table.insert(contents, separator:content())
+
+  if #state.workspaces == 0 then
+    local message = NuiLine()
+    message:append(NuiText "No workspaces found")
+    table.insert(lines, message)
+    table.insert(contents, message:content())
+  else
+    local current_workspace = require("tagonaut.api").get_workspace()
+    for _, ws in ipairs(state.workspaces) do
+      local line = create_workspace_line(ws, ws.path == current_workspace, total_width)
+      table.insert(lines, line)
+      table.insert(contents, line:content())
+    end
+  end
+
+  local footer_separator = create_separator(total_width)
+  table.insert(lines, footer_separator)
+  table.insert(contents, footer_separator:content())
+
+  local legend = create_legend()
+  table.insert(lines, legend)
+  table.insert(contents, legend:content())
+
+  vim.api.nvim_buf_set_lines(state.popup.bufnr, 0, -1, false, contents)
+
+  vim.schedule(function()
+    if vim.api.nvim_buf_is_valid(state.popup.bufnr) then
+      vim.api.nvim_buf_clear_namespace(state.popup.bufnr, ns_id, 0, -1)
+
+      for i, line in ipairs(lines) do
+        pcall(function()
+          line:highlight(state.popup.bufnr, ns_id, i)
+        end)
+      end
+    end
   end)
+
+  vim.bo[state.popup.bufnr].modifiable = false
 end
 
-function M.close_window()
-  local win = state.get_main_window()
-  if win and vim.api.nvim_win_is_valid(win) then
-    vim.api.nvim_win_close(win, true)
-    state.set_main_window(nil)
-    state.set_main_buffer(nil)
+function M.get_window_title(state)
+  local components = {
+    "Workspaces",
+    "Sort: " .. state.sort_mode,
+  }
+
+  if state.show_ignored then
+    table.insert(components, "Showing Ignored")
   end
+
+  if state.search_mode and state.search_query ~= "" then
+    table.insert(components, "Search: " .. state.search_query)
+  end
+
+  return " " .. table.concat(components, " | ") .. " "
 end
 
-function M.get_window_state()
-  local win = state.get_main_window()
-  return win and vim.api.nvim_win_is_valid(win)
+function M.matches_search(workspace, query)
+  if not query or query == "" then
+    return true
+  end
+
+  query = query:lower()
+  local name = (workspace.name or vim.fn.fnamemodify(workspace.path, ":t")):lower()
+  local path = workspace.path:lower()
+
+  local pattern = query:gsub(".", function(c)
+    return c .. ".*"
+  end)
+
+  return name:match(pattern) or path:match(pattern)
 end
 
 return M

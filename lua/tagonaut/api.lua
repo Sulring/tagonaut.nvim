@@ -416,11 +416,63 @@ end
 --- Trigger a keyed file action
 --- @return boolean, string: Success status and message
 function M.trigger_keyed_file()
-  local success, msg = M.trigger_keyed_tag()
-  if success then
-    msg = "Switched to file: " .. msg
+  if not current_workspace then
+    M.set_workspace(vim.fn.getcwd())
   end
-  return success, msg
+
+  if vim.tbl_isempty(M.workspaces) then
+    M.load_tags()
+  end
+
+  local function get_matches_msg(matches)
+    local msg = "Matching shortcuts: "
+    for shortcut, info in pairs(matches) do
+      msg = msg .. string.format("[%s]=%s ", shortcut, info.name)
+    end
+    return msg
+  end
+
+  local input = ""
+  local matches = {}
+
+  if M.workspaces[current_workspace] and M.workspaces[current_workspace].tags then
+    for _, info in pairs(M.workspaces[current_workspace].tags) do
+      if info.shortcut then
+        matches[info.shortcut] = info
+      end
+    end
+  end
+
+  while true do
+    vim.api.nvim_echo({ { get_matches_msg(matches) .. " > " .. input, "Comment" } }, false, {})
+    vim.cmd "redraw"
+
+    local char = vim.fn.nr2char(vim.fn.getchar())
+    input = input .. char
+
+    matches = {}
+    if M.workspaces[current_workspace] and M.workspaces[current_workspace].tags then
+      for _, info in pairs(M.workspaces[current_workspace].tags) do
+        if info.shortcut and info.shortcut:find("^" .. vim.pesc(input)) then
+          matches[info.shortcut] = info
+        end
+      end
+    end
+
+    if vim.tbl_count(matches) == 0 then
+      local msg = messages.no_tag_for_shortcut(input)
+      vim.api.nvim_echo({ { msg, "WarningMsg" } }, false, {})
+      return false, msg
+    end
+
+    if vim.tbl_count(matches) == 1 then
+      local _, tag_info = next(matches)
+      vim.cmd("edit " .. tag_info.path)
+      local msg = string.format("Switched to file: %s", vim.fn.fnamemodify(tag_info.path, ":t"))
+      vim.api.nvim_echo({ { msg, "Normal" } }, false, {})
+      return true, msg
+    end
+  end
 end
 
 --- Get a tag by its shortcut

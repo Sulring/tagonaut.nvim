@@ -34,7 +34,7 @@ M.options = {
     cycle_sort = "s",
     toggle_show_ignored = "i",
   },
-  floating_window = {
+  taglist_window = {
     close = "q",
     select = "<CR>",
     delete = "d",
@@ -50,9 +50,9 @@ M.options = {
 
 function M.setup(opts)
   opts = opts or {}
-  opts.floating_window = opts.floating_window or {}
+  opts.taglist_window = opts.taglist_window or {}
   opts.workspace_window = opts.workspace_window or {}
-  opts.floating_window = vim.tbl_deep_extend("force", M.options.floating_window, opts.floating_window)
+  opts.taglist_window = vim.tbl_deep_extend("force", M.options.taglist_window, opts.taglist_window)
   opts.workspace_window = vim.tbl_deep_extend("force", M.options.workspace_window, opts.workspace_window)
   M.options = vim.tbl_deep_extend("force", M.options, opts)
 end

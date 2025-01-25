@@ -53,7 +53,7 @@ function M.setup()
   })
 
   vim.api.nvim_create_user_command("TagonautList", function()
-    require("tagonaut.floating.init").list_tags()
+    require("tagonaut.taglist.init").list_tags()
   end, {})
 
   vim.api.nvim_create_user_command("TagonautToggle", function()
@@ -176,7 +176,7 @@ function M.setup()
   vim.api.nvim_set_keymap(
     "n",
     config.keymaps.list_tags,
-    ':lua require("tagonaut.floating.init").list_tags()<CR>',
+    ':lua require("tagonaut.taglist.init").list_tags()<CR>',
     { noremap = true, silent = true }
   )
 

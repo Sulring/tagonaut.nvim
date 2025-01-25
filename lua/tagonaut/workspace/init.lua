@@ -13,14 +13,12 @@ function M.switch_workspace(workspace_path)
     return false
   end
 
+  local window = require "tagonaut.workspace.window"
+  window.close_window()
+
   vim.cmd("cd " .. vim.fn.fnameescape(workspace_path))
   api.set_workspace(workspace_path)
-
-  local target_win = vim.api.nvim_get_current_win()
-
-  vim.api.nvim_set_current_win(target_win)
-  vim.cmd("Ex " .. vim.fn.fnameescape(workspace_path))
-
+  vim.cmd("edit " .. vim.fn.fnameescape(workspace_path))
   vim.notify("Switched to workspace: " .. workspace_path, vim.log.levels.INFO)
   return true
 end

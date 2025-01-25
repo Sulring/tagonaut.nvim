@@ -1,181 +1,216 @@
 local M = {}
-local api = vim.api
-local state = require "tagonaut.floating.state"
 
-local COLUMN_WIDTHS = {
-  name = 30,
-  timestamp = 20,
-  tags = 5,
-  spacing = 8,
-}
-
-function M.generate_legend(config)
-  local legend_items = {
-    { key = config.workspace_window.select:gsub("<CR>", "Enter"), desc = "Select" },
-    { key = config.workspace_window.cycle_sort, desc = "Sort" },
-    { key = config.workspace_window.toggle_show_ignored, desc = "ShowIgnored" },
-    { key = config.workspace_window.toggle_ignore, desc = "ToggleIgnore" },
-    { key = config.workspace_window.rename, desc = "Rename" },
-    { key = config.workspace_window.close, desc = "Close" },
-  }
-
-  local formatted_items = {}
-  for _, item in ipairs(legend_items) do
-    table.insert(formatted_items, string.format("%s:%s", item.key, item.desc))
+function M.fuzzy_match(str, pattern)
+  if not str or not pattern or pattern == "" then
+    return true
   end
 
-  local legend = "  " .. table.concat(formatted_items, "  |  ")
-  return { legend }
+  str = str:lower()
+  pattern = pattern:lower()
+
+  local fuzzy_pattern = pattern:gsub(".", function(c)
+    return c:match "[%w_-]" and ("[" .. c:lower() .. c:upper() .. "].*") or vim.pesc(c) .. ".*"
+  end)
+
+  return str:match(fuzzy_pattern) ~= nil
 end
 
-function M.calculate_dimensions(workspace_count)
-  local width = math.floor(vim.o.columns * 0.8)
-  local config = require("tagonaut.config").options
-  local legend_height = config.show_legend and 2 or 0
-  local height = math.min(workspace_count + 2 + legend_height, math.floor(vim.o.lines * 0.8))
-  local row = math.floor((vim.o.lines - height) / 2)
-  local col = math.floor((vim.o.columns - width) / 2)
-  local path_width =
-    math.min(90, width - COLUMN_WIDTHS.name - COLUMN_WIDTHS.timestamp - COLUMN_WIDTHS.tags - COLUMN_WIDTHS.spacing)
+function M.get_visual_width(str)
+  if not str then
+    return 0
+  end
+  return vim.api.nvim_strwidth(str)
+end
+
+function M.truncate_string(str, max_width, ellipsis)
+  if not str then
+    return ""
+  end
+  if not ellipsis then
+    ellipsis = "..."
+  end
+
+  local width = M.get_visual_width(str)
+  if width <= max_width then
+    return str
+  end
+
+  local ellipsis_width = M.get_visual_width(ellipsis)
+  local target_width = max_width - ellipsis_width
+
+  local result = ""
+  local current_width = 0
+
+  for _, grapheme in vim.iter(vim.split(str, "")) do
+    local char_width = vim.api.nvim_strwidth(grapheme)
+
+    if current_width + char_width > target_width then
+      return result .. ellipsis
+    end
+
+    result = result .. grapheme
+    current_width = current_width + char_width
+  end
+
+  return result .. ellipsis
+end
+
+function M.pad_string(str, width, align)
+  local str_width = M.get_visual_width(str)
+  local padding = width - str_width
+
+  if padding <= 0 then
+    return str
+  end
+
+  if align == "right" then
+    return string.rep(" ", padding) .. str
+  elseif align == "center" then
+    local left_pad = math.floor(padding / 2)
+    local right_pad = padding - left_pad
+    return string.rep(" ", left_pad) .. str .. string.rep(" ", right_pad)
+  else
+    return str .. string.rep(" ", padding)
+  end
+end
+
+function M.create_highlight_groups()
+  local highlights = {
+    TagonautHeader = { link = "Special" },
+    TagonautSeparator = { link = "NonText" },
+    TagonautCurrent = { link = "Special" },
+    TagonautIgnored = { link = "Comment" },
+    TagonautPath = { link = "Directory" },
+    TagonautTimestamp = { link = "NonText" },
+    TagonautTags = { link = "Number" },
+    TagonautSearch = { link = "Search" },
+    TagonautBorder = { link = "FloatBorder" },
+    TagonautTitle = { link = "Title" },
+  }
+
+  for name, def in pairs(highlights) do
+    vim.api.nvim_set_hl(0, name, def)
+  end
+end
+
+function M.normalize_path(path)
+  if not path then
+    return nil
+  end
+
+  path = vim.fn.expand(path)
+
+  path = path:gsub("/*$", "")
+
+  if not path:match "^/" then
+    path = vim.fn.fnamemodify(path, ":p")
+  end
+
+  return path
+end
+
+function M.calculate_window_dimensions()
+  local config = require("tagonaut.config").options.workspace_window
+
+  local screen_width = vim.o.columns
+  local screen_height = vim.o.lines
+
+  local width = math.floor(screen_width * (config.width or 0.8))
+  local height = math.floor(screen_height * (config.height or 0.8))
+
+  width = math.max(width, config.min_width or 80)
+  height = math.max(height, config.min_height or 20)
+
+  width = math.min(width, screen_width - 4)
+  height = math.min(height, screen_height - 4)
 
   return {
     width = width,
     height = height,
-    row = row,
-    col = col,
-    path_width = path_width,
-    legend_height = legend_height,
+    row = math.floor((screen_height - height) / 2),
+    col = math.floor((screen_width - width) / 2),
   }
 end
 
-function M.format_timestamp(timestamp)
-  if timestamp == 0 then
-    return "Never"
+function M.format_file_size(size)
+  local units = { "B", "KB", "MB", "GB" }
+  local unit_index = 1
+
+  while size > 1024 and unit_index < #units do
+    size = size / 1024
+    unit_index = unit_index + 1
   end
-  return os.date("%Y-%m-%d %H:%M", timestamp)
+
+  return string.format("%.1f%s", size, units[unit_index])
 end
 
-function M.format_path(path, max_width)
-  local home = os.getenv "HOME"
-  if home then
-    path = path:gsub("^" .. home:gsub("%-", "%%-"), "~")
+function M.format_relative_time(timestamp)
+  if not timestamp or timestamp == 0 then
+    return "never"
   end
 
-  if #path <= max_width then
-    return path
+  local now = os.time()
+  local diff = now - timestamp
+
+  local intervals = {
+    { 86400 * 365, "year" },
+    { 86400 * 30, "month" },
+    { 86400 * 7, "week" },
+    { 86400, "day" },
+    { 3600, "hour" },
+    { 60, "minute" },
+    { 1, "second" },
+  }
+
+  for _, interval in ipairs(intervals) do
+    local time = math.floor(diff / interval[1])
+    if time > 0 then
+      return string.format("%d %s%s ago", time, interval[2], time == 1 and "" or "s")
+    end
   end
 
-  return "..." .. path:sub(-max_width + 3)
+  return "just now"
 end
 
-function M.generate_content(dimensions)
-  local lines = {}
-  local config = require("tagonaut.config").options
+function M.debounce(fn, ms)
+  local timer = vim.loop.new_timer()
+  local running = false
 
-  local header = string.format(
-    "%-3s %-" .. COLUMN_WIDTHS.name .. "s %-" .. dimensions.path_width .. "s %-" .. COLUMN_WIDTHS.timestamp .. "s %s",
-    "",
-    "Name",
-    "Path",
-    "Last Accessed",
-    "Tags"
-  )
-  table.insert(lines, header)
-  table.insert(lines, string.rep("-", dimensions.width))
-
-  local current_workspace = require("tagonaut.api").get_workspace()
-
-  for _, ws in ipairs(state.workspace_list) do
-    local prefix = ws.path == current_workspace and "*" or " "
-    local formatted_path = M.format_path(ws.path, dimensions.path_width)
-    local formatted_name = ws.name or vim.fn.fnamemodify(ws.path, ":t")
-
-    if #formatted_name > COLUMN_WIDTHS.name then
-      formatted_name = formatted_name:sub(1, COLUMN_WIDTHS.name - 3) .. "..."
+  return function(...)
+    local args = { ... }
+    if running then
+      timer:stop()
     end
 
-    local line = string.format(
-      "%s   %-" .. COLUMN_WIDTHS.name .. "s %-" .. dimensions.path_width .. "s %-" .. COLUMN_WIDTHS.timestamp .. "s %d",
-      prefix,
-      formatted_name,
-      formatted_path,
-      M.format_timestamp(ws.last_accessed),
-      ws.tag_count
+    running = true
+    timer:start(
+      ms,
+      0,
+      vim.schedule_wrap(function()
+        running = false
+        fn(unpack(args))
+      end)
     )
-    table.insert(lines, line)
-  end
-
-  if config.show_legend then
-    table.insert(lines, "")
-
-    local legend = M.generate_legend(config)
-    for _, line in ipairs(legend) do
-      table.insert(lines, line)
-    end
-  end
-
-  return lines
-end
-
-function M.highlight_current_workspace(buf, current_workspace)
-  if #state.workspace_list > 0 then
-    local ns_id = api.nvim_create_namespace "TagonautWorkspaceHighlight"
-    for i, ws in ipairs(state.workspace_list) do
-      if ws.path == current_workspace then
-        api.nvim_buf_add_highlight(buf, ns_id, "Special", i + 1, 0, -1)
-        break
-      end
-    end
   end
 end
 
-function M.create_cursor_autocmds(buf, win)
-  local config = require("tagonaut.config").options
-  local legend_height = config.show_legend and 2 or 0
+function M.is_float_window(winid)
+  if not winid or not vim.api.nvim_win_is_valid(winid) then
+    return false
+  end
 
-  vim.api.nvim_create_autocmd("BufEnter", {
-    buffer = buf,
-    callback = function()
-      if api.nvim_win_is_valid(win) and api.nvim_buf_line_count(buf) > 2 then
-        api.nvim_win_set_cursor(win, { 3, 0 })
-      end
-    end,
-    once = true,
-  })
-
-  vim.api.nvim_create_autocmd("CursorMoved", {
-    buffer = buf,
-    callback = function()
-      if not api.nvim_win_is_valid(win) then
-        return
-      end
-
-      local cursor = api.nvim_win_get_cursor(win)
-      local line_count = api.nvim_buf_line_count(buf)
-
-      if cursor[1] <= 2 then
-        if line_count > 2 then
-          api.nvim_win_set_cursor(win, { 3, 0 })
-        end
-      elseif cursor[1] > line_count - legend_height then
-        api.nvim_win_set_cursor(win, { line_count - legend_height, 0 })
-      end
-    end,
-  })
+  local config = vim.api.nvim_win_get_config(winid)
+  return config.relative ~= ""
 end
 
-function M.create_cleanup_autocmds(buf, win)
-  vim.api.nvim_create_autocmd("BufLeave", {
-    buffer = buf,
-    callback = function()
-      if api.nvim_win_is_valid(win) then
-        api.nvim_win_close(win, true)
-        state.set_main_window(nil)
-        state.set_main_buffer(nil)
-      end
-    end,
-    once = true,
-  })
+function M.center_cursor(winid)
+  if not winid or not vim.api.nvim_win_is_valid(winid) then
+    return
+  end
+
+  local line = vim.api.nvim_win_get_cursor(winid)[1]
+  vim.api.nvim_win_set_cursor(winid, { line, 0 })
+  vim.cmd "normal! zz"
 end
 
 return M
