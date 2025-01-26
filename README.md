@@ -1,6 +1,6 @@
 # Tagonaut.nvim 🚀
 
-A navigation tool for Neovim that lets you create, manage and quickly jump between tagged locations across your workspaces. Think of it as dropping pins on a code map!
+A navigation tool for Neovim that lets you create, manage and quickly jump between tagged locations across your workspaces.
 
 ## Screenshots
 
