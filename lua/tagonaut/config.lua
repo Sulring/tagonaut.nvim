@@ -7,6 +7,8 @@ M.options = {
   use_lsp = true,
   use_treesitter = true,
   show_legend = true,
+  minimal = false,
+  minimal_mode_state = nil,
   extmark = {
     icon = "󱈤",
     hl_group = "ZipTagExtmark",
@@ -33,6 +35,8 @@ M.options = {
     rename = "r",
     cycle_sort = "s",
     toggle_show_ignored = "i",
+    toggle_legend = "l",
+    toggle_minimal = "m",
   },
   taglist_window = {
     close = "q",
@@ -42,6 +46,8 @@ M.options = {
     clear = "c",
     assign_key = "a",
     clear_all_keys = "x",
+    toggle_legend = "l",
+    toggle_minimal = "m",
   },
   keyed_tag_hl_group = "ZipTagKeyedTag",
   deleted_tag_hl_group = "ZipTagDeletedTag",

@@ -8,6 +8,100 @@ M.SORT_MODES = {
   SHORTCUT = "shortcut",
 }
 
+M.MINIMAL_LAYOUT = {
+  indicator_width = 2,
+  shortcut_width = 4,
+  name_width = 50,
+  padding = 1,
+}
+
+M.FULL_LAYOUT = {
+  indicator_width = 2,
+  shortcut_width = 8,
+  name_width = 30,
+  file_width = 30,
+  line_width = 6,
+  padding = 1,
+  preview_ratio = 0.6,
+}
+
+function M.get_layout(minimal)
+  return minimal and M.MINIMAL_LAYOUT or M.FULL_LAYOUT
+end
+
+function M.get_base_coordinates()
+  local screen_width = vim.o.columns
+  local screen_height = vim.o.lines
+  local total_width = math.floor(screen_width * 0.8)
+  local col_start = math.floor((screen_width - total_width) / 2)
+  local height = math.floor(screen_height * 0.8)
+  local row_start = math.floor((screen_height - height) / 2)
+
+  return {
+    total_width = total_width,
+    height = height,
+    col_start = col_start,
+    row_start = row_start,
+  }
+end
+
+function M.calculate_content_width(minimal)
+  if minimal then
+    local total_width = M.MINIMAL_LAYOUT.indicator_width
+      + M.MINIMAL_LAYOUT.shortcut_width
+      + M.MINIMAL_LAYOUT.name_width
+      + (M.MINIMAL_LAYOUT.padding * 2)
+    return total_width
+  end
+
+  return M.FULL_LAYOUT.indicator_width
+    + M.FULL_LAYOUT.shortcut_width
+    + M.FULL_LAYOUT.name_width
+    + M.FULL_LAYOUT.file_width
+    + M.FULL_LAYOUT.line_width
+    + (M.FULL_LAYOUT.padding * 4)
+end
+
+function M.calculate_window_dimensions(state)
+  local minimal = state.get_minimal_mode()
+  local tag_count = #state.get_current_tag_list()
+
+  local screen_width = vim.o.columns
+  local screen_height = vim.o.lines
+  local total_width = math.floor(screen_width * 0.8)
+  local total_height = math.floor(screen_height * 0.8)
+  local start_row = math.floor((screen_height - total_height) / 2)
+  local start_col = math.floor((screen_width - total_width) / 2)
+
+  if minimal then
+    local content_width = M.calculate_content_width(true)
+    local width = math.min(content_width + 2, screen_width - 4)
+    local height = math.min(tag_count, screen_height - 4)
+
+    return {
+      width = width,
+      height = height,
+      row = math.floor((screen_height - height) / 2),
+      col = math.floor((screen_width - width) / 2),
+      start_col = start_col,
+      start_row = start_row,
+      total_width = total_width,
+    }
+  else
+    local main_width = math.floor(total_width * 0.4)
+
+    return {
+      width = main_width,
+      height = total_height,
+      row = start_row,
+      col = start_col,
+      start_col = start_col,
+      start_row = start_row,
+      total_width = total_width,
+    }
+  end
+end
+
 function M.format_tag_info(tag)
   if not tag or not tag.info then
     return {
@@ -37,7 +131,6 @@ function M.get_sorted_tags(tags)
         path = info.path,
         line = tonumber(info.line),
         shortcut = info.shortcut,
-
       },
     })
   end
@@ -57,46 +150,8 @@ function M.get_sorted_tags(tags)
     end,
   }
 
-  table.sort(tag_list, sort_functions[sort_mode or M.SORT_MODES.NAME])
-
-  vim.notify("Sorted tag list: " .. vim.inspect(tag_list))
+  table.sort(tag_list, sort_functions[M.SORT_MODES.NAME])
   return tag_list
-end
-
-function M.filter_tags(tags, query)
-  if not query or query == "" then
-    return tags
-  end
-
-  local filtered = {}
-  query = query:lower()
-
-  for _, tag in ipairs(tags) do
-    local info = M.format_tag_info(tag)
-    if M.matches_search(info, query) then
-      table.insert(filtered, tag)
-    end
-  end
-
-  return filtered
-end
-
-function M.matches_search(info, query)
-  local searchable_fields = {
-    info.name,
-    info.file,
-    info.shortcut,
-    tostring(info.line),
-    info.full_path,
-  }
-
-  for _, field in ipairs(searchable_fields) do
-    if field and field:lower():find(query, 1, true) then
-      return true
-    end
-  end
-
-  return false
 end
 
 function M.format_key_display(key)
@@ -119,38 +174,6 @@ function M.format_key_display(key)
     display_key = display_key:gsub(pattern, replace)
   end
   return display_key
-end
-
-function M.calculate_window_dimensions(options)
-  local config = require("tagonaut.config").options.taglist_window
-  local screen_width = vim.o.columns
-  local screen_height = vim.o.lines
-
-  options = vim.tbl_extend("force", {
-    width_ratio = config.width or 0.8,
-    height_ratio = config.height or 0.8,
-    min_width = config.min_width or 80,
-    min_height = config.min_height or 20,
-  }, options or {})
-
-  local width = math.floor(screen_width * options.width_ratio)
-  local height = math.floor(screen_height * options.height_ratio)
-
-  width = math.max(width, options.min_width)
-  height = math.max(height, options.min_height)
-
-  width = math.min(width, screen_width - 4)
-  height = math.min(height, screen_height - 4)
-
-  local row = math.floor((screen_height - height) / 2)
-  local col = math.floor((screen_width - width) / 2)
-
-  return {
-    width = width,
-    height = height,
-    row = row,
-    col = col,
-  }
 end
 
 function M.format_path(path)

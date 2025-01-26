@@ -18,7 +18,10 @@ local function get_window_width(state)
   return vim.o.columns
 end
 
-local function calculate_path_width(total_width)
+local function calculate_path_width(total_width, is_minimal)
+  if is_minimal then
+    return math.floor(total_width * 0.6)
+  end
   local used_width = LAYOUT.current_width
     + LAYOUT.name_width
     + LAYOUT.timestamp_width
@@ -72,8 +75,8 @@ local function format_timestamp(timestamp)
 end
 
 local function create_header(total_width)
-  local path_width = calculate_path_width(total_width)
   local line = NuiLine()
+  local path_width = calculate_path_width(total_width)
 
   line:append(NuiText(string.rep(" ", LAYOUT.current_width)))
 
@@ -97,52 +100,31 @@ local function create_separator(total_width)
   return line
 end
 
-local function create_workspace_line(workspace, is_current, total_width)
-  local path_width = calculate_path_width(total_width)
+local function create_workspace_line(workspace, is_current, total_width, is_minimal)
   local line = NuiLine()
+  local path_width = calculate_path_width(total_width, is_minimal)
 
   line:append(NuiText(is_current and "* " or "  ", is_current and "TagonautCurrent" or nil))
 
   local name = workspace.name or vim.fn.fnamemodify(workspace.path, ":t")
   local name_hl = workspace.ignored and "TagonautIgnored" or nil
-  line:append(create_padded_text(name, LAYOUT.name_width, name_hl))
+  local name_width = is_minimal and math.floor(total_width * 0.3) or LAYOUT.name_width
+  line:append(create_padded_text(name, name_width, name_hl))
   line:append(NuiText(string.rep(" ", LAYOUT.padding)))
 
   local path_hl = workspace.ignored and "TagonautIgnored" or "TagonautPath"
   line:append(create_padded_text(workspace.path, path_width, path_hl))
-  line:append(NuiText(string.rep(" ", LAYOUT.padding)))
 
-  local time_hl = workspace.ignored and "TagonautIgnored" or "TagonautTimestamp"
-  line:append(create_padded_text(format_timestamp(workspace.last_accessed), LAYOUT.timestamp_width, time_hl))
-  line:append(NuiText(string.rep(" ", LAYOUT.padding)))
-
-  local tags_hl = workspace.ignored and "TagonautIgnored" or "TagonautTags"
-  line:append(create_padded_text(tostring(workspace.tag_count), LAYOUT.tags_width, tags_hl, "right"))
+  if not is_minimal then
+    line:append(NuiText(string.rep(" ", LAYOUT.padding)))
+    local time_hl = workspace.ignored and "TagonautIgnored" or "TagonautTimestamp"
+    line:append(create_padded_text(format_timestamp(workspace.last_accessed), LAYOUT.timestamp_width, time_hl))
+    line:append(NuiText(string.rep(" ", LAYOUT.padding)))
+    local tags_hl = workspace.ignored and "TagonautIgnored" or "TagonautTags"
+    line:append(create_padded_text(tostring(workspace.tag_count), LAYOUT.tags_width, tags_hl, "right"))
+  end
 
   return line
-end
-
-local function format_key_for_display(key)
-  if not key then
-    return ""
-  end
-
-  local replacements = {
-
-    { pattern = "<CR>", replace = "Enter" },
-
-    { pattern = "<C%-(%w)>", replace = "Ctrl+%1" },
-    { pattern = "<S%-(%w)>", replace = "Shift+%1" },
-    { pattern = "<A%-(%w)>", replace = "Alt+%1" },
-    { pattern = "<M%-(%w)>", replace = "Meta+%1" },
-    { pattern = "<leader>", replace = "Leader" },
-  }
-
-  local display_key = key
-  for _, replacement in ipairs(replacements) do
-    display_key = display_key:gsub(replacement.pattern, replacement.replace)
-  end
-  return display_key
 end
 
 local function create_legend()
@@ -153,6 +135,8 @@ local function create_legend()
     { key = config.toggle_show_ignored or "i", desc = "show/hide ignored" },
     { key = config.rename or "r", desc = "rename" },
     { key = "/", desc = "search" },
+    { key = "l", desc = "toggle legend" },
+    { key = "m", desc = "toggle minimal" },
     { key = config.close or "q", desc = "quit" },
   }
 
@@ -161,7 +145,7 @@ local function create_legend()
     if i > 1 then
       line:append(NuiText " │ ")
     end
-    line:append(NuiText(format_key_for_display(item.key), "TagonautKey"))
+    line:append(NuiText(item.key, "TagonautKey"))
     line:append(NuiText ": ")
     line:append(NuiText(item.desc))
   end
@@ -198,13 +182,15 @@ function M.render_content(state)
   local lines = {}
   local contents = {}
 
-  local header = create_header(total_width)
-  table.insert(lines, header)
-  table.insert(contents, header:content())
+  if not state.minimal then
+    local header = create_header(total_width)
+    table.insert(lines, header)
+    table.insert(contents, header:content())
 
-  local separator = create_separator(total_width)
-  table.insert(lines, separator)
-  table.insert(contents, separator:content())
+    local separator = create_separator(total_width)
+    table.insert(lines, separator)
+    table.insert(contents, separator:content())
+  end
 
   if #state.workspaces == 0 then
     local message = NuiLine()
@@ -214,19 +200,21 @@ function M.render_content(state)
   else
     local current_workspace = require("tagonaut.api").get_workspace()
     for _, ws in ipairs(state.workspaces) do
-      local line = create_workspace_line(ws, ws.path == current_workspace, total_width)
+      local line = create_workspace_line(ws, ws.path == current_workspace, total_width, state.minimal)
       table.insert(lines, line)
       table.insert(contents, line:content())
     end
   end
 
-  local footer_separator = create_separator(total_width)
-  table.insert(lines, footer_separator)
-  table.insert(contents, footer_separator:content())
+  if state.show_legend then
+    local footer_separator = create_separator(total_width)
+    table.insert(lines, footer_separator)
+    table.insert(contents, footer_separator:content())
 
-  local legend = create_legend()
-  table.insert(lines, legend)
-  table.insert(contents, legend:content())
+    local legend = create_legend()
+    table.insert(lines, legend)
+    table.insert(contents, legend:content())
+  end
 
   vim.api.nvim_buf_set_lines(state.popup.bufnr, 0, -1, false, contents)
 
@@ -257,6 +245,10 @@ function M.get_window_title(state)
 
   if state.search_mode and state.search_query ~= "" then
     table.insert(components, "Search: " .. state.search_query)
+  end
+
+  if state.minimal then
+    table.insert(components, "Minimal")
   end
 
   return " " .. table.concat(components, " | ") .. " "

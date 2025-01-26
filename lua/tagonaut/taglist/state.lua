@@ -1,8 +1,7 @@
-
 local M = {}
+local config = require("tagonaut.config").options
 
 local state = {
-
   popup = nil,
   preview_popup = nil,
   legend_popup = nil,
@@ -11,10 +10,11 @@ local state = {
   current_tag_list = {},
   cursor_pos = 1,
 
-  search_mode = false,
-  search_query = "",
   sort_mode = "name",
   show_preview = true,
+
+  minimal_mode = config.minimal,
+  show_legend = config.show_legend,
 }
 
 M.HEADER_ROWS = 2
@@ -65,18 +65,30 @@ function M.set_current_tag_list(tag_list)
 end
 
 function M.set_cursor_position(pos)
-
   local max_pos = #state.current_tag_list
   pos = math.max(1, math.min(pos, max_pos))
   state.cursor_pos = pos
 end
 
-function M.get_search_mode()
-  return state.search_mode
+function M.get_minimal_mode()
+  return state.minimal_mode
 end
 
-function M.get_search_query()
-  return state.search_query
+function M.get_show_legend()
+  return state.show_legend
+end
+
+function M.toggle_minimal_mode()
+  state.minimal_mode = not state.minimal_mode
+  if state.minimal_mode then
+    state.show_preview = false
+  end
+  return state.minimal_mode
+end
+
+function M.toggle_legend()
+  state.show_legend = not state.show_legend
+  return state.show_legend
 end
 
 function M.get_sort_mode()
@@ -84,15 +96,7 @@ function M.get_sort_mode()
 end
 
 function M.get_show_preview()
-  return state.show_preview
-end
-
-function M.set_search_mode(mode)
-  state.search_mode = mode
-end
-
-function M.set_search_query(query)
-  state.search_query = query
+  return state.show_preview and not state.minimal_mode
 end
 
 function M.set_sort_mode(mode)
@@ -106,15 +110,6 @@ end
 function M.get_current_tag()
   if #state.current_tag_list > 0 and state.cursor_pos >= 1 and state.cursor_pos <= #state.current_tag_list then
     local tag = state.current_tag_list[state.cursor_pos]
-
-    vim.notify(
-      string.format(
-        "Selected tag: %s at line %s in %s",
-        tag.info.name or "unnamed",
-        tag.info.line or "unknown",
-        tag.info.path or "unknown"
-      )
-    )
     return tag
   end
   return nil
@@ -127,8 +122,6 @@ function M.reset()
   state.current_workspace = nil
   state.current_tag_list = {}
   state.cursor_pos = 1
-  state.search_mode = false
-  state.search_query = ""
   state.sort_mode = "name"
   state.show_preview = true
 end
@@ -144,15 +137,15 @@ function M.is_preview_open()
 end
 
 function M.get_buffer_line_for_cursor()
-  return state.cursor_pos + M.HEADER_ROWS
+  return state.minimal_mode and state.cursor_pos or (state.cursor_pos + M.HEADER_ROWS)
 end
 
 function M.buffer_line_to_cursor_position(buffer_line)
-  return buffer_line - M.HEADER_ROWS
+  return state.minimal_mode and buffer_line or (buffer_line - M.HEADER_ROWS)
 end
 
 function M.is_valid_tag_line(buffer_line)
-  local tag_start = M.HEADER_ROWS + 1
+  local tag_start = state.minimal_mode and 1 or (M.HEADER_ROWS + 1)
   local tag_end = tag_start + #state.current_tag_list - 1
   return buffer_line >= tag_start and buffer_line <= tag_end
 end

@@ -8,7 +8,6 @@ local function setup()
   view.setup_highlights()
 end
 
-
 function M.display_tags(workspace_path)
   actions.display_tags(workspace_path)
 end
@@ -41,8 +40,12 @@ function M.list_tags()
   actions.list_tags()
 end
 
-function M.toggle_search()
-  actions.toggle_search()
+function M.toggle_minimal()
+  actions.toggle_minimal()
+end
+
+function M.toggle_legend()
+  actions.toggle_legend()
 end
 
 function M.is_window_open()
@@ -61,7 +64,6 @@ function M.get_current_tag()
   return state.get_current_tag()
 end
 
--- Set up the module when loaded
 setup()
 
 return M
