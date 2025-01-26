@@ -30,7 +30,7 @@ This is a bit rough around the edges - made it for my own workflow but sharing i
 Using lazy.nvim:
 ```lua
 {
-  'your-username/tagonaut.nvim',
+  'sulring/tagonaut.nvim',
   dependencies = {
     'nvim-lua/plenary.nvim',
     'MunifTanjim/nui.nvim',
